@@ -1,10 +1,10 @@
 package jirayu4r7.com.labsqlite;
 
+import android.app.ProgressDialog;
 import android.content.DialogInterface;
-import android.support.design.widget.CoordinatorLayout;
+import android.os.Bundle;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.support.v7.widget.DefaultItemAnimator;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -17,8 +17,21 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.android.volley.AuthFailureError;
+import com.android.volley.Request;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonArrayRequest;
+import com.android.volley.toolbox.StringRequest;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -26,8 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private List<Student> studentList = new ArrayList<>();
     private RecyclerView studentsRecyclerView;
     private Button addButton;
-
-    private DatabaseHelper db;
+    private ProgressDialog pd;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,9 +48,9 @@ public class MainActivity extends AppCompatActivity {
 
         addButton = findViewById(R.id.button_add);
         studentsRecyclerView = findViewById(R.id.recycler_view_student);
+        pd = new ProgressDialog(MainActivity.this);
 
-        db = new DatabaseHelper(this);
-        studentList.addAll(db.getAllStudents());
+        loadDataStudents();
 
         addButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -77,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
                 if (which == 0) {
                     showStudentDialog(true, studentList.get(position), position);
                 } else {
-                    deleteStudent(position);
+                    deleteStudent(studentList.get(position).getId());
                 }
             }
         });
@@ -128,44 +140,183 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 if (shouldUpdate && student != null) {
-                    updateStudent(inputId.getText().toString(),
-                            inputName.getText().toString(),
-                            position);
+                    updateStudent(inputId.getText().toString(), inputName.getText().toString());
                 } else {
-                    // create new note
+                    // create new student
                     createStudent(inputId.getText().toString(), inputName.getText().toString());
                 }
             }
         });
     }
 
-    private void createStudent(String id, String name) {
-        db.insertStudent(id, name);
-        Student student = db.getStudent(id);
-        if (student != null) {
-            studentList.add(0, student);
-            mAdapter.notifyDataSetChanged();
-        }
+    private void createStudent(final String id, final String name) {
 
+        pd.setMessage("Insert Data");
+        pd.setCancelable(false);
+        pd.show();
+
+        StringRequest sendData = new StringRequest(Request.Method.POST, ServerApi.URL_INSERT,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        pd.cancel();
+                        try {
+                            JSONObject res = new JSONObject(response);
+                            Toast.makeText(MainActivity.this,
+                                    "message : " + res.getString("message"),
+                                    Toast.LENGTH_SHORT).show();
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        loadDataStudents();
+                        mAdapter.notifyDataSetChanged();
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        pd.cancel();
+                        Toast.makeText(MainActivity.this,
+                                "message : Insert Data Failed",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }) {
+            @Override
+            protected Map<String, String> getParams() throws AuthFailureError {
+                Map<String, String> map = new HashMap<>();
+                map.put("id", id);
+                map.put("name", name);
+                return map;
+            }
+        };
+
+        AppController.getInstance().addToRequestQueue(sendData);
     }
 
-    private void updateStudent(String id, String name, int position) {
-        Student student = studentList.get(position);
+    private void updateStudent(final String id, final String name) {
+        pd.setMessage("Update Data");
+        pd.setCancelable(false);
+        pd.show();
 
-        student.setId(id);
-        student.setName(name);
+        StringRequest updateReq = new StringRequest(Request.Method.POST, ServerApi.URL_UPDATE,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        pd.cancel();
+                        try {
+                            JSONObject res = new JSONObject(response);
+                            Toast.makeText(MainActivity.this, "message : "
+                                            + res.getString("message"),
+                                    Toast.LENGTH_SHORT).show();
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        loadDataStudents();
+                        mAdapter.notifyDataSetChanged();
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        pd.cancel();
+                        Toast.makeText(MainActivity.this,
+                                "message : Update Data Failed",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }) {
+            @Override
+            protected Map<String, String> getParams() throws AuthFailureError {
+                Map<String, String> map = new HashMap<>();
+                map.put("id", id);
+                map.put("name", name);
+                return map;
+            }
+        };
 
-        db.updateStudent(student);
-
-        studentList.set(position, student);
-        mAdapter.notifyItemChanged(position);
-
+        AppController.getInstance().addToRequestQueue(updateReq);
     }
 
-    private void deleteStudent(int position) {
-        db.deleteStudent(studentList.get(position));
+    private void deleteStudent(final String id) {
+        pd.setMessage("Delete Data ...");
+        pd.setCancelable(false);
+        pd.show();
 
-        studentList.remove(position);
-        mAdapter.notifyItemRemoved(position);
+        StringRequest delReq = new StringRequest(Request.Method.POST, ServerApi.URL_DELETE,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        pd.cancel();
+                        Log.d("volley", "response : " + response.toString());
+                        try {
+                            JSONObject res = new JSONObject(response);
+                            Toast.makeText(MainActivity.this,
+                                    "message : " + res.getString("message"),
+                                    Toast.LENGTH_SHORT).show();
+
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+                        loadDataStudents();
+                        mAdapter.notifyDataSetChanged();
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        pd.cancel();
+                        Log.d("volley", "error : " + error.getMessage());
+                        Toast.makeText(MainActivity.this,
+                                "message : failed to delete data",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }) {
+            @Override
+            protected Map<String, String> getParams() throws AuthFailureError {
+                Map<String, String> map = new HashMap<>();
+                map.put("id", id);
+                return map;
+            }
+        };
+
+        AppController.getInstance().addToRequestQueue(delReq);
+    }
+
+
+    private void loadDataStudents() {
+        pd.setMessage("Loading Data");
+        pd.setCancelable(false);
+        pd.show();
+
+        studentList.clear();
+
+        JsonArrayRequest reqData = new JsonArrayRequest(Request.Method.POST, ServerApi.URL_DATA, null,
+                new Response.Listener<JSONArray>() {
+                    @Override
+                    public void onResponse(JSONArray response) {
+                        pd.cancel();
+                        Log.d("volley", "response : " + response.toString());
+                        for (int i = 0; i < response.length(); i++) {
+                            try {
+                                JSONObject data = response.getJSONObject(i);
+                                Student student = new Student();
+                                student.setId(data.getString("id"));
+                                student.setName(data.getString("name"));
+                                studentList.add(student);
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        mAdapter.notifyDataSetChanged();
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        pd.cancel();
+                        Log.d("volley", "error : " + error.getMessage());
+                    }
+                });
+
+        AppController.getInstance().addToRequestQueue(reqData);
     }
 }
